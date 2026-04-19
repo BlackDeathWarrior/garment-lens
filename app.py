@@ -85,17 +85,23 @@ def render_results(ids, metadatas, distances) -> None:
         distance = row["distance"]
         filename = row["filename"]
         image_path = RAW_IMAGES_DIR / filename
+        source_url = str(metadata.get("source_url", "") or "").strip()
 
         cols = st.columns([1, 2])
         with cols[0]:
             if image_path.exists():
                 st.image(str(image_path), use_container_width=True)
+            elif source_url:
+                st.image(source_url, use_container_width=True)
+                st.caption("Preview via source URL (local image not present).")
             else:
                 st.warning(f"Image not found: {filename}")
         with cols[1]:
             st.markdown(f"**SKU:** `{sku}`")
             st.markdown(f"**Category:** `{metadata.get('category', 'unknown')}`")
             st.markdown(f"**Filename:** `{filename}`")
+            if source_url:
+                st.markdown(f"**Source URL:** `{source_url}`")
             if "patterned" in metadata:
                 st.markdown(f"**Patterned Flag:** `{metadata.get('patterned')}`")
             if "pattern_score" in metadata:
@@ -150,6 +156,11 @@ def main() -> None:
         st.stop()
 
     st.success(f"Runtime ready on `{device}`. Indexed items: `{collection.count()}`")
+    if not RAW_IMAGES_DIR.exists():
+        st.info(
+            "Local `data/raw_images` folder is not present. "
+            "Results will use `source_url` previews when available."
+        )
 
     if collection.count() == 0:
         st.warning("Collection is empty. Run `python ingest.py` first.")

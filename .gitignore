@@ -22,3 +22,6 @@ streamlit*.log
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Demo bundle artifacts
+artifacts/*.zip
