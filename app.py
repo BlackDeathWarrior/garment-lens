@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 import time
 from pathlib import Path
 
@@ -12,6 +13,7 @@ ensure_sqlite_compat()
 import chromadb
 import streamlit as st
 import torch
+from PIL import Image
 
 from garlens_pipeline import MODEL_NAME, embed_image_bytes, load_model_bundle, remove_background, resolve_device
 
@@ -31,6 +33,52 @@ def load_runtime(model_name: str, device_pref: str):
         metadata={"hnsw:space": "cosine"},
     )
     return device, processor, model, collection
+
+
+def crop_image_bytes(raw_bytes: bytes, key_prefix: str) -> bytes:
+    """Optional slider-based crop for uploaded/captured images."""
+    image = Image.open(BytesIO(raw_bytes)).convert("RGB")
+    width, height = image.size
+
+    st.markdown("**Crop (Optional)**")
+    st.caption("Adjust crop boundaries only if needed, otherwise keep full image.")
+
+    left = st.slider(
+        "Left",
+        min_value=0,
+        max_value=max(0, width - 1),
+        value=0,
+        key=f"{key_prefix}_left",
+    )
+    top = st.slider(
+        "Top",
+        min_value=0,
+        max_value=max(0, height - 1),
+        value=0,
+        key=f"{key_prefix}_top",
+    )
+    right = st.slider(
+        "Right",
+        min_value=left + 1,
+        max_value=width,
+        value=width,
+        key=f"{key_prefix}_right",
+    )
+    bottom = st.slider(
+        "Bottom",
+        min_value=top + 1,
+        max_value=height,
+        value=height,
+        key=f"{key_prefix}_bottom",
+    )
+
+    cropped = image.crop((left, top, right, bottom))
+    st.image(cropped, use_container_width=True)
+    st.caption(f"Cropped size: {cropped.width}x{cropped.height}")
+
+    output = BytesIO()
+    cropped.save(output, format="JPEG", quality=95)
+    return output.getvalue()
 
 
 def render_results(ids, metadatas, distances) -> None:
@@ -170,21 +218,53 @@ def main() -> None:
         st.warning("Collection is empty. Run `python ingest.py` first.")
         st.stop()
 
-    uploaded = st.file_uploader("Upload garment image (JPG/PNG)", type=["jpg", "jpeg", "png"])
-    if uploaded is None:
-        st.info("Upload an image to search similar garments.")
+    st.subheader("Query Input")
+    source_mode = st.radio(
+        "Choose input source",
+        options=["Upload Image", "Open Camera"],
+        horizontal=True,
+    )
+
+    raw: bytes | None = None
+    input_label = "Uploaded Image"
+
+    if source_mode == "Upload Image":
+        uploaded = st.file_uploader("Upload garment image (JPG/PNG)", type=["jpg", "jpeg", "png"])
+        if uploaded is not None:
+            raw = uploaded.getvalue()
+    else:
+        captured = st.camera_input("Open camera and snap a pic")
+        input_label = "Camera Capture"
+        if captured is not None:
+            raw = captured.getvalue()
+
+    if raw is None:
+        st.info("Provide an image using upload or camera to run search.")
         st.stop()
 
+    crop_enabled = st.checkbox(
+        "Crop image before search (optional)",
+        value=False,
+        help="Use this when the photo has extra background or multiple garments.",
+    )
+    query_image_bytes = raw
+    if crop_enabled:
+        try:
+            query_image_bytes = crop_image_bytes(raw, key_prefix="query_crop")
+            input_label = "Cropped Query Image"
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Failed to crop image: {exc}")
+            st.stop()
+
     query_start = time.perf_counter()
-    raw = uploaded.getvalue()
     st.subheader("Query Preview")
     preview_cols = st.columns(2)
     with preview_cols[0]:
-        st.markdown("**Uploaded Image**")
-        st.image(raw, use_container_width=True)
+        st.markdown(f"**{input_label}**")
+        st.image(query_image_bytes, use_container_width=True)
 
     try:
-        processed = remove_background(raw)
+        processed = remove_background(query_image_bytes)
         with preview_cols[1]:
             st.markdown("**Foreground Preview (Background Removed)**")
             st.image(processed, use_container_width=True)
