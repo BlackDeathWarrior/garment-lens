@@ -9,6 +9,10 @@ import statistics
 import time
 from pathlib import Path
 
+from sqlite_compat import ensure_sqlite_compat
+
+ensure_sqlite_compat()
+
 import chromadb
 
 from garlens_pipeline import MODEL_NAME, embed_image_bytes, load_model_bundle, remove_background, resolve_device

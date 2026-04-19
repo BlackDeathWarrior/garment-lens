@@ -8,6 +8,7 @@ rembg
 transformers
 chromadb
 streamlit
+pysqlite3-binary; platform_system == "Linux"
 # For CUDA builds, prefer installing from pytorch.org with matching wheel.
 torch
 torchvision

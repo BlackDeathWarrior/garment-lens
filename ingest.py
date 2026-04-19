@@ -11,6 +11,10 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from sqlite_compat import ensure_sqlite_compat
+
+ensure_sqlite_compat()
+
 import chromadb
 from PIL import Image
 

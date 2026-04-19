@@ -5,6 +5,10 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from sqlite_compat import ensure_sqlite_compat
+
+ensure_sqlite_compat()
+
 import chromadb
 import streamlit as st
 import torch
