@@ -133,19 +133,25 @@ def _validate_image(data: bytes) -> tuple[bool, int, int]:
         return False, 0, 0
 
 
-def _load_catalog(csv_path: Path) -> tuple[dict[str, int], set[str]]:
+def _load_catalog(
+    csv_path: Path,
+) -> tuple[dict[str, int], set[str], set[str], set[str]]:
     """
     Reads an existing catalog CSV to support resuming a partial download.
 
     Returns:
         category_counts : {category_code: images_already_saved}
         seen_hashes     : set of SHA-256 hashes (global dedup guard)
+        seen_skus       : SKU values already present in the catalog
+        seen_filenames  : filename values already present in the catalog
     """
     category_counts: dict[str, int] = {k: 0 for k in CATEGORIES}
     seen_hashes: set[str] = set()
+    seen_skus: set[str] = set()
+    seen_filenames: set[str] = set()
 
     if not csv_path.exists():
-        return category_counts, seen_hashes
+        return category_counts, seen_hashes, seen_skus, seen_filenames
 
     with open(csv_path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -155,8 +161,14 @@ def _load_catalog(csv_path: Path) -> tuple[dict[str, int], set[str]]:
             h = row.get("sha256", "")
             if h:
                 seen_hashes.add(h)
+            sku = row.get("sku", "").strip()
+            if sku:
+                seen_skus.add(sku)
+            filename = row.get("filename", "").strip()
+            if filename:
+                seen_filenames.add(filename)
 
-    return category_counts, seen_hashes
+    return category_counts, seen_hashes, seen_skus, seen_filenames
 
 
 # ── Core download logic ───────────────────────────────────────────────────────
@@ -259,6 +271,8 @@ def _download_category(
     queries: list[str],
     already_have: int,
     seen_hashes: set[str],
+    seen_skus: set[str],
+    seen_filenames: set[str],
     writer: "csv.DictWriter",
     skip_fh,
 ) -> int:
@@ -270,6 +284,8 @@ def _download_category(
         queries      : DDGS image search strings for color/style variety
         already_have : Images already saved for this category (resume offset)
         seen_hashes  : Mutable global hash set; updated in place
+        seen_skus    : Mutable SKU set to avoid ID collisions
+        seen_filenames : Mutable filename set to avoid filename collisions
         writer       : Open CSV DictWriter to append rows
         skip_fh      : Open file handle for the skip-log
 
@@ -291,7 +307,7 @@ def _download_category(
         skip_fh.write(f"SEARCH_FAILED\t{code}\t{' | '.join(queries)}\n")
         return 0
 
-    saved   = 0
+    saved = 0
     sku_idx = already_have + 1   # Continue numbering from where we left off
 
     for result in tqdm(results, desc=f"  [{code}]", unit="img"):
@@ -302,9 +318,17 @@ def _download_category(
         if not url:
             continue
 
-        sku      = f"{code}-{sku_idx:04d}"
-        filename = f"{sku}.jpg"
-        filepath = IMAGE_DIR / filename
+        while True:
+            sku = f"{code}-{sku_idx:04d}"
+            filename = f"{sku}.jpg"
+            filepath = IMAGE_DIR / filename
+            if (
+                sku not in seen_skus
+                and filename not in seen_filenames
+                and not filepath.exists()
+            ):
+                break
+            sku_idx += 1
 
         # ── Network fetch ──────────────────────────────────────────────────
         data = _fetch_image_bytes(url=url, skip_fh=skip_fh)
@@ -331,6 +355,8 @@ def _download_category(
         # ── Persist ────────────────────────────────────────────────────────
         filepath.write_bytes(data)
         seen_hashes.add(digest)
+        seen_skus.add(sku)
+        seen_filenames.add(filename)
 
         writer.writerow({
             "sku":        sku,
@@ -359,7 +385,7 @@ def _download_category(
 def main() -> None:
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
-    category_counts, seen_hashes = _load_catalog(CATALOG_CSV)
+    category_counts, seen_hashes, seen_skus, seen_filenames = _load_catalog(CATALOG_CSV)
     write_header = not CATALOG_CSV.exists()
 
     target_total = IMAGES_PER_CATEGORY * len(CATEGORIES)
@@ -387,6 +413,8 @@ def main() -> None:
                     queries=queries,
                     already_have=category_counts[code],
                     seen_hashes=seen_hashes,
+                    seen_skus=seen_skus,
+                    seen_filenames=seen_filenames,
                     writer=writer,
                     skip_fh=skip_fh,
                 )
