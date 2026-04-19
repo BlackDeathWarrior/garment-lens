@@ -1,0 +1,24 @@
+# Virtual environments
+venv/
+.venv/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local data artifacts
+data/raw_images/
+data/chroma_db/
+data/archive_*/
+data/*.log
+data/cleaning_report.csv
+streamlit*.log
+*.out.log
+*.err.log
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

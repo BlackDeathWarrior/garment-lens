@@ -1,0 +1,13 @@
+ddgs
+requests
+Pillow
+tqdm
+numpy
+scipy
+rembg
+transformers
+chromadb
+streamlit
+# For CUDA builds, prefer installing from pytorch.org with matching wheel.
+torch
+torchvision

@@ -1,0 +1,2 @@
+# One SKU per line. These are excluded from indexing and removed from the vector DB.
+DRESS-0097
